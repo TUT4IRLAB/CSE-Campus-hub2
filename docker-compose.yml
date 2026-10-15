@@ -1,0 +1,51 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: campushub
+      POSTGRES_PASSWORD: campushub
+      POSTGRES_DB: campushub
+    ports:
+      - "5432:5432"
+    volumes:
+      - campushub_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U campushub"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: "postgresql://campushub:campushub@db:5432/campushub?schema=public"
+      JWT_SECRET: "dev-only-secret-change-me"
+      CORS_ORIGIN: "http://localhost:5173"
+      PORT: 4000
+      NODE_ENV: development
+    ports:
+      - "4000:4000"
+    depends_on:
+      db:
+        condition: service_healthy
+    # Sync the schema directly (no committed migration files yet) then start the API.
+    command: sh -c "npx prisma db push --accept-data-loss && node dist/src/index.js"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: "http://localhost:4000/api"
+      PORT: "5173"
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+volumes:
+  campushub_pgdata:
